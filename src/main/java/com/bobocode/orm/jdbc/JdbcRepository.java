@@ -1,14 +1,16 @@
 package com.bobocode.orm.jdbc;
 
 import static com.bobocode.orm.util.EntityUtils.extractFieldName;
+import static com.bobocode.orm.util.EntityUtils.extractFieldValue;
 import static com.bobocode.orm.util.EntityUtils.extractId;
 import static com.bobocode.orm.util.EntityUtils.extractIdField;
 import static com.bobocode.orm.util.EntityUtils.getFieldsSortedByName;
+import static java.util.function.Predicate.not;
 
-import com.bobocode.orm.annotation.Id;
-import com.bobocode.orm.context.PersistenceContext;
 import com.bobocode.orm.exception.OrmException;
+import com.bobocode.orm.session.context.PersistenceContext;
 import com.bobocode.orm.util.EntityKey;
+import com.bobocode.orm.util.EntityUtils;
 import com.bobocode.orm.util.SqlUtils;
 import java.lang.reflect.Field;
 import java.sql.PreparedStatement;
@@ -20,19 +22,18 @@ import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.assertj.core.util.VisibleForTesting;
 
 @Slf4j
 @RequiredArgsConstructor
-public class JDBCRepository {
+public class JdbcRepository {
 
   private final DataSource dataSource;
   private final PersistenceContext context;
 
   public <T> T findOneById(Class<T> entityType, Object id) {
-    var key = EntityKey.of(entityType, id);
+    var key = new EntityKey<>(entityType, id);
 
-    if (context.contains(key)) {
+    if (context.containsKey(key)) {
       T entity = context.getEntity(key);
       log.info("Returning cached entity {}", entity);
       return entity;
@@ -58,7 +59,6 @@ public class JDBCRepository {
     }
   }
 
-  @VisibleForTesting
   <T> List<T> findAllByField(Class<T> entityType, Field filterField, Object fieldVal) {
     try (var connection = dataSource.getConnection()) {
 
@@ -89,9 +89,9 @@ public class JDBCRepository {
 
     for (var field : entityType.getDeclaredFields()) {
       field.setAccessible(true);
-      String fieldName = extractFieldName(field);
-
+      var fieldName = extractFieldName(field);
       var fieldValue = resultSet.getObject(fieldName);
+
       log.trace("Setting '{}' field to '{}'", fieldName, fieldValue);
       field.set(instance, fieldValue);
     }
@@ -105,7 +105,13 @@ public class JDBCRepository {
 
     try (var connection = dataSource.getConnection()) {
       try (var statement = connection.prepareStatement(sql)) {
-        populatePreparedStatement(entity, statement);
+        List<Field> updatableFields =
+            getFieldsSortedByName(entity.getClass()).stream()
+                .filter(not(EntityUtils::isIdField))
+                .toList();
+
+        populatePreparedStatement(entity, statement, updatableFields);
+        statement.setObject(updatableFields.size() + 1, extractId(entity));
         log.debug("Executing '{}'", statement);
 
         int updatedRowsCount = statement.executeUpdate();
@@ -117,17 +123,46 @@ public class JDBCRepository {
   }
 
   @SneakyThrows
-  private void populatePreparedStatement(Object entity, PreparedStatement statement) {
-    int columnIdx = 1;
+  private void populatePreparedStatement(
+      Object entity, PreparedStatement statement, List<Field> fields) {
+    var idx = 1;
 
-    for (var field : getFieldsSortedByName(entity.getClass())) {
-      if (!field.isAnnotationPresent(Id.class)) {
-        field.setAccessible(true);
-        statement.setObject(columnIdx, field.get(entity));
-        columnIdx++;
-      }
+    for (var field : fields) {
+      statement.setObject(idx, extractFieldValue(entity, field));
+      idx++;
     }
+  }
 
-    statement.setObject(columnIdx, extractId(entity));
+  public void insert(Object entity) {
+    String sql = SqlUtils.createInsertSql(entity);
+
+    try (var connection = dataSource.getConnection()) {
+      try (var statement = connection.prepareStatement(sql)) {
+        populatePreparedStatement(entity, statement, getFieldsSortedByName(entity.getClass()));
+
+        log.debug("Executing '{}'", statement);
+        var insertedRowsCount = statement.executeUpdate();
+
+        log.debug("Inserted {} records", insertedRowsCount);
+      }
+    } catch (SQLException e) {
+      throw new OrmException(e.getMessage(), e);
+    }
+  }
+
+  public void remove(Object entity) {
+    String sql = SqlUtils.createDeleteSql(entity.getClass());
+
+    try (var connection = dataSource.getConnection()) {
+      try (var statement = connection.prepareStatement(sql)) {
+        statement.setObject(1, extractId(entity));
+        log.debug("Executing '{}'", statement);
+        var deletedRowsCount = statement.executeUpdate();
+
+        log.debug("Deleted {} records ", deletedRowsCount);
+      }
+    } catch (SQLException e) {
+      throw new OrmException(e.getMessage(), e);
+    }
   }
 }

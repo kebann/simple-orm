@@ -1,10 +1,5 @@
 package com.bobocode.orm.util;
 
-import lombok.Value;
+import lombok.NonNull;
 
-@Value(staticConstructor = "of")
-public class EntityKey<T> {
-
-  Class<T> type;
-  Object id;
-}
+public record EntityKey<T>(@NonNull Class<T> type, @NonNull Object id) {}

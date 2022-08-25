@@ -21,7 +21,7 @@ public final class EntityUtils {
 
   public static Field extractIdField(Class<?> entityType) {
     return Arrays.stream(entityType.getDeclaredFields())
-        .filter(f -> f.isAnnotationPresent(Id.class))
+        .filter(EntityUtils::isIdField)
         .findFirst()
         .orElseThrow(
             () ->
@@ -32,8 +32,7 @@ public final class EntityUtils {
   @SneakyThrows
   public static Object extractId(Object entity) {
     var idField = extractIdField(entity.getClass());
-    idField.setAccessible(true);
-    return idField.get(entity);
+    return extractFieldValue(entity, idField);
   }
 
   public static String extractTableName(Class<?> entityType) {
@@ -49,8 +48,7 @@ public final class EntityUtils {
     var sortedFields = getFieldsSortedByName(entityType);
 
     for (var field : sortedFields) {
-      field.setAccessible(true);
-      var fieldVal = field.get(entity);
+      var fieldVal = extractFieldValue(entity, field);
       snapshotFields.add(fieldVal);
     }
 
@@ -67,5 +65,15 @@ public final class EntityUtils {
     return Optional.ofNullable(field.getAnnotation(Column.class))
         .map(Column::name)
         .orElse(field.getName());
+  }
+
+  @SneakyThrows
+  public static Object extractFieldValue(Object entity, Field field) {
+    field.setAccessible(true);
+    return field.get(entity);
+  }
+
+  public static boolean isIdField(Field field) {
+    return field.isAnnotationPresent(Id.class);
   }
 }

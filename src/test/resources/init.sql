@@ -1,9 +1,10 @@
 CREATE TABLE users
 (
-    id     bigint primary key,
+    id     BIGINT PRIMARY KEY,
     name   VARCHAR(255),
     handle VARCHAR(255)
 );
+
 CREATE TABLE tweets
 (
     id         BIGINT PRIMARY KEY,
@@ -11,11 +12,14 @@ CREATE TABLE tweets
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     user_id    BIGINT REFERENCES users
 );
+
 INSERT INTO users(id, name, handle)
 VALUES (1, 'Indi Mcconnell', 'tireson'),
        (2, 'Krista Sparks', 'impling'),
        (3, 'Aydin Leonard', 'telepoi'),
-       (4, 'Shane Webb', 'sanspan');
+       (4, 'Shane Webb', 'sanspan'),
+       (5, 'Ron Von', 'ron_von');
+
 INSERT INTO tweets(id, tweet_text, user_id)
 VALUES (1, 'Congrats to all a treat to a game of baking',
         1),

@@ -19,7 +19,7 @@ class SessionIntegrationTest extends BaseTest {
 
   @BeforeEach
   void setUp() {
-    sessionFactory = new SimpleSessionFactory(postgresDataSource());
+    sessionFactory = new DefaultSessionFactory(postgresDataSource());
     session = sessionFactory.createSession();
   }
 
@@ -31,6 +31,38 @@ class SessionIntegrationTest extends BaseTest {
 
     assertThat(user).isSameAs(sameUser);
     session.close();
+  }
+
+  @DisplayName("Persisting a new record should inserted into DB upon the context closure")
+  @Test
+  void shouldInsertNewPersistedRecord() {
+    User newUser = new User();
+    newUser.setName("Max");
+    newUser.setHandle("max_fax");
+    newUser.setId(25L);
+
+    session.persist(newUser);
+    session.close();
+
+    Session anotherSession = sessionFactory.createSession();
+    User insertedUser = anotherSession.find(User.class, newUser.getId());
+
+    assertThat(newUser).isEqualTo(insertedUser);
+  }
+
+  @DisplayName("Entity should be removed upon the context closure")
+  @Test
+  void shouldRemoveEntity() {
+    User user = session.find(User.class, 5L);
+    session.remove(user);
+    session.close();
+
+    Session anotherSession = sessionFactory.createSession();
+    assertThatThrownBy(() -> anotherSession.find(User.class, user.getId()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage(
+            "No records found for '%s' entity with id=%s",
+            User.class.getSimpleName(), user.getId());
   }
 
   @DisplayName("Changes to entity within session should be persisted upon session closure")
